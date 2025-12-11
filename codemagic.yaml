@@ -10,9 +10,9 @@ workflows:
         APP_STORE_CONNECT_ISSUER_ID: $APP_STORE_CONNECT_ISSUER_ID
         APP_STORE_CONNECT_KEY_IDENTIFIER: $APP_STORE_CONNECT_KEY_IDENTIFIER
         APP_STORE_CONNECT_PRIVATE_KEY: $APP_STORE_CONNECT_PRIVATE_KEY
-        XCODE_WORKSPACE: "HabitTracker/HabitTracker.xcworkspace"
+        XCODE_WORKSPACE: "HabitTracker.xcworkspace"
         XCODE_SCHEME: "HabitTracker"
-        XCODE_PROJECT: "HabitTracker/HabitTracker.xcodeproj"
+        XCODE_PROJECT: "HabitTracker.xcodeproj"
         BUILD_FOR_TESTING: "false"
       xcode: latest
       cocoapods: default
@@ -156,7 +156,7 @@ workflows:
     environment:
       vars:
         BUNDLE_ID: "com.habittracker.app"
-        XCODE_WORKSPACE: "HabitTracker/HabitTracker.xcworkspace"
+        XCODE_WORKSPACE: "HabitTracker.xcworkspace"
         XCODE_SCHEME: "HabitTracker"
       xcode: latest
     
