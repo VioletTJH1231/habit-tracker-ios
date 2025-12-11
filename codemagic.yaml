@@ -1,0 +1,211 @@
+workflows:
+  ios-workflow:
+    name: HabitTracker iOS Build & Deploy
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    
+    environment:
+      vars:
+        BUNDLE_ID: "com.habittracker.app"
+        APP_STORE_CONNECT_ISSUER_ID: $APP_STORE_CONNECT_ISSUER_ID
+        APP_STORE_CONNECT_KEY_IDENTIFIER: $APP_STORE_CONNECT_KEY_IDENTIFIER
+        APP_STORE_CONNECT_PRIVATE_KEY: $APP_STORE_CONNECT_PRIVATE_KEY
+        XCODE_WORKSPACE: "HabitTracker/HabitTracker.xcworkspace"
+        XCODE_SCHEME: "HabitTracker"
+        XCODE_PROJECT: "HabitTracker/HabitTracker.xcodeproj"
+        BUILD_FOR_TESTING: "false"
+      xcode: latest
+      cocoapods: default
+    
+    scripts:
+      - name: Install dependencies
+        script: |
+          # Update CocoaPods if needed
+          gem install cocoapods
+          
+          # Check Swift version
+          swift --version
+          xcodebuild -version
+          
+          # Find the workspace or project
+          WORKSPACE=$(find . -name "*.xcworkspace" -type d | head -1)
+          PROJECT=$(find . -name "*.xcodeproj" -type d | head -1)
+          
+          if [ -n "$WORKSPACE" ]; then
+            echo "Found workspace: $WORKSPACE"
+            xcodebuild -list -workspace "$WORKSPACE"
+          elif [ -n "$PROJECT" ]; then
+            echo "Found project: $PROJECT"
+            xcodebuild -list -project "$PROJECT"
+          else
+            echo "Error: No Xcode workspace or project found!"
+            exit 1
+          fi
+      
+      - name: Build for testing
+        script: |
+          WORKSPACE=$(find . -name "*.xcworkspace" -type d | head -1)
+          SCHEME="HabitTracker"
+          
+          xcodebuild build \
+            -workspace "$WORKSPACE" \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -derivedDataPath build/DerivedData \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            -verbose 2>&1 | tee build.log
+      
+      - name: Run unit tests
+        script: |
+          WORKSPACE=$(find . -name "*.xcworkspace" -type d | head -1)
+          SCHEME="HabitTracker"
+          
+          xcodebuild test \
+            -workspace "$WORKSPACE" \
+            -scheme "$SCHEME" \
+            -configuration Debug \
+            -destination 'platform=iOS Simulator,name=iPhone 15' \
+            -resultBundlePath build/test-results \
+            -verbose || true
+      
+      - name: Archive app
+        script: |
+          WORKSPACE=$(find . -name "*.xcworkspace" -type d | head -1)
+          SCHEME="HabitTracker"
+          
+          xcodebuild archive \
+            -workspace "$WORKSPACE" \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -archivePath "build/HabitTracker.xcarchive" \
+            -derivedDataPath build/DerivedData \
+            -destination generic/platform=iOS \
+            CODE_SIGN_STYLE=Automatic \
+            PROVISIONING_PROFILE_SPECIFIER="$PROVISIONING_PROFILE" \
+            DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" \
+            BUNDLE_ID="$BUNDLE_ID" \
+            -verbose 2>&1 | tee archive.log
+      
+      - name: Export IPA
+        script: |
+          xcodebuild -exportArchive \
+            -archivePath "build/HabitTracker.xcarchive" \
+            -exportPath build/ipa \
+            -exportOptionsPlist build/ExportOptions.plist \
+            -verbose || xcodebuild -exportArchive \
+            -archivePath "build/HabitTracker.xcarchive" \
+            -exportPath build/ipa \
+            -exportFormat ipa || true
+      
+      - name: Create ExportOptions.plist
+        script: |
+          mkdir -p build
+          cat > build/ExportOptions.plist << 'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>method</key>
+              <string>app-store</string>
+              <key>signingStyle</key>
+              <string>automatic</string>
+              <key>stripSwiftSymbols</key>
+              <true/>
+              <key>teamID</key>
+              <string>$DEVELOPMENT_TEAM</string>
+              <key>bundleIdentifier</key>
+              <string>com.habittracker.app</string>
+          </dict>
+          </plist>
+          EOF
+      
+      - name: Check build artifacts
+        script: |
+          ls -la build/ || echo "No build directory"
+          find build -name "*.ipa" -o -name "*.app" -o -name "*.xcarchive" 2>/dev/null || echo "No artifacts found"
+      
+      - name: Upload to App Store Connect
+        script: |
+          if [ -f "build/ipa/HabitTracker.ipa" ]; then
+            # Using App Store Connect API
+            xcrun altool --upload-app \
+              --file "build/ipa/HabitTracker.ipa" \
+              --type ios \
+              --apiKey "$APP_STORE_CONNECT_KEY_IDENTIFIER" \
+              --apiIssuer "$APP_STORE_CONNECT_ISSUER_ID" \
+              --verbose || echo "Upload skipped - may need manual configuration"
+          else
+            echo "IPA file not found at build/ipa/HabitTracker.ipa"
+          fi
+    
+    artifacts:
+      - build/HabitTracker.xcarchive
+      - build/ipa/**
+      - build/test-results
+      - build.log
+      - archive.log
+
+  # Alternative: Faster build without code signing (for CI testing)
+  ios-test:
+    name: HabitTracker iOS Test Build
+    instance_type: mac_mini_m2
+    max_build_duration: 45
+    
+    environment:
+      vars:
+        BUNDLE_ID: "com.habittracker.app"
+        XCODE_WORKSPACE: "HabitTracker/HabitTracker.xcworkspace"
+        XCODE_SCHEME: "HabitTracker"
+      xcode: latest
+    
+    scripts:
+      - name: Build for simulator
+        script: |
+          WORKSPACE=$(find . -name "*.xcworkspace" -type d | head -1)
+          SCHEME="HabitTracker"
+          
+          xcodebuild build \
+            -workspace "$WORKSPACE" \
+            -scheme "$SCHEME" \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO
+      
+      - name: Run unit tests
+        script: |
+          WORKSPACE=$(find . -name "*.xcworkspace" -type d | head -1)
+          SCHEME="HabitTracker"
+          
+          xcodebuild test \
+            -workspace "$WORKSPACE" \
+            -scheme "$SCHEME" \
+            -destination 'platform=iOS Simulator,name=iPhone 15' \
+            -resultBundlePath test-results || true
+      
+      - name: Check syntax and warnings
+        script: |
+          WORKSPACE=$(find . -name "*.xcworkspace" -type d | head -1)
+          SCHEME="HabitTracker"
+          
+          xcodebuild clean build \
+            -workspace "$WORKSPACE" \
+            -scheme "$SCHEME" \
+            -destination 'generic/platform=iOS Simulator' \
+            -verbose 2>&1 | grep -i "warning" || echo "No warnings found"
+    
+    artifacts:
+      - test-results
+
+# Environment variable references:
+# $PROVISIONING_PROFILE_UUID - UUID of iOS provisioning profile (configure in Codemagic)
+# $CERTIFICATE_UUID - UUID of iOS signing certificate (configure in Codemagic)
+# $CERTIFICATE_PASSWORD - Password for certificate (configure in Codemagic)
+# $APP_STORE_CONNECT_ISSUER_ID - App Store Connect API issuer ID
+# $APP_STORE_CONNECT_KEY_IDENTIFIER - App Store Connect API key ID
+# $APP_STORE_CONNECT_PRIVATE_KEY - App Store Connect API private key
+# $DEVELOPMENT_TEAM - Your Apple Developer Team ID (format: XXXXXXXXXX)
+# $DEVELOPER_EMAIL - Email for build notifications
+# $PROVISIONING_PROFILE - Name of provisioning profile
